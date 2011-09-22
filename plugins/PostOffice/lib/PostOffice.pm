@@ -134,59 +134,69 @@ sub process_message_parts {
     my $pkg = shift;
     my ($blog, $msg, $cfg, $author) = @_;
 
-    require Email::MIME;
+    use Email::MIME;
     my $parsed = Email::MIME->new($msg->{message});
-
+    
     require MT::I18N;
     my ($text, $charset);
     my $format = $author->text_format || $blog->convert_paras || '__default__';
 
     my @files;
     my @parts = $parsed->parts;
-
-    if (@parts == 2) {
-        if (($parts[0]->content_type =~ m!^text/plain!) && ($parts[1]->content_type =~ m!^multipart/(related|alternative|mixed)!)) {
-            # these are the parts we're looking for
-            @parts = $parts[1]->subparts;
-        }
-    }
-
+    
     print STDERR sprintf("[PostOffice] Found %d parts in message\n", scalar @parts)
       if $DEBUG;
+
+    if ($DEBUG) {
+       print STDERR "[PostOffice] walk though parts down 3 levels max\n";
+       foreach my $part (@parts) {
+           print STDERR '[PostOffice] top level part with content_type of ' . $part->content_type  . "\n";
+           if (my @sub_parts = $part->subparts) {
+               print STDERR "[PostOffice] found 2nd level parts\n";
+               foreach my $sub_part (@sub_parts) {
+                   print STDERR '[PostOffice] 2nd level part with content_type of ' . $sub_part->content_type  . "\n";
+                   if (my @third_sub_parts = $sub_part->subparts) {
+                        print STDERR "[PostOffice] found 3rd level parts\n";
+                        foreach my $third_sub_part (@third_sub_parts) {
+                            print STDERR '[PostOffice] 3rd level part with content_type of ' . $third_sub_part->content_type  . "\n";
+                        }
+                    }
+               }
+           }
+       }
+    }
 
     my $cidmap;
     # prescan for embedded images
     foreach my $part (@parts) {
         if ($part->filename) {
-            my ($media_type, $part_charset) =
-              _parse_content_type($part->header('Content-Type'));
-            my $filename =
-              MT::I18N::encode_text($part->filename, $part_charset);
-            my $fmgr = $blog->file_mgr;
-            $filename =
-              _unique_filename($fmgr, $blog->site_path, $filename);
-            require File::Spec;
-            my $filepath =
-              File::Spec->catfile($blog->site_path, $filename);
-            my $bytes = $fmgr->put_data($part->body, $filepath);
-            my $cid = $part->header('Content-Id');
-            if ($cid) {
-                $cid =~ s/^<|>$//g;
-            }
-            my $file = {
-                name       => $filename,
-                path       => $filepath,
-                url        => $blog->site_url . $filename,
-                media_type => $media_type,
-                size       => $bytes,
-                content_id => $cid,
-            };
+            my $file = $pkg->process_part_attachment($part,$blog);
+            my $cid = $file->{content_id} if $file->{content_id};
             $cidmap->{$cid} = $file if $cid;
-            my $asset = $pkg->save_attachment($blog, $file);
-
-            if ($asset) {
-                $file->{asset} = $asset;
-                push @files, $file;
+            push @files, $file;
+        }
+        #now check to see if any attachments are lurking inside a multipart part
+        if ($part->content_type  =~ m!^multipart!) {
+            my @sub_parts = $part->subparts;
+            foreach my $sub_part (@sub_parts) {
+                if ($sub_part->filename) {
+                    my $file = $pkg->process_part_attachment($sub_part,$blog);
+                    my $cid = $file->{content_id} if $file->{content_id};
+                    $cidmap->{$cid} = $file if $cid;
+                    push @files, $file;
+                }
+                #now check to see if any attachments are lurking inside a second level multipart part
+                if ($sub_part->content_type  =~ m!^multipart!) {
+                    my @sub_sub_parts = $sub_part->subparts;
+                    foreach my $sub_sub_part (@sub_sub_parts) {
+                        if ($sub_sub_part->filename) {
+                            my $file = $pkg->process_part_attachment($sub_sub_part,$blog);
+                            my $cid = $file->{content_id} if $file->{content_id};
+                            $cidmap->{$cid} = $file if $cid;
+                            push @files, $file;
+                        }
+                    }
+                }
             }
         }
     }
@@ -197,58 +207,77 @@ sub process_message_parts {
     
 
     foreach my $part (@parts) {
-        my ($media_type, $part_charset) =
-          _parse_content_type($part->header('Content-Type'));
-        if (!defined $charset) {
-            $charset = $part_charset;
+        if ($part->content_type  =~ m!^text/(html|plain)!) {
+            ($text,$charset) = $pkg->process_part_body($part,$format,$cidmap,$charset);
         }
-        if ($media_type =~ m!^text/(html|plain)!) {
-
-            print STDERR '[PostOffice body text] From $part: ' . $part->body . "\n";
-
-            my $body = MT::I18N::encode_text($part->body, $part_charset);
-            
-            print STDERR "[PostOffice body text] Processed through encode_text: $body\n";
-
-            if (($media_type eq 'text/plain') && ($format eq 'richtext')) {
-                # we're embedding html, so format must be richtext.
-                $body = html_text_transform($body);
+        
+        if ($part->content_type =~ m!^multipart/(related|alternative|mixed)!) {
+            my @sub_parts = $part->subparts;
+            foreach my $sub_part (@sub_parts) {
+                if ($sub_part->content_type  =~ m!^text/(html|plain)!) {
+                    ($text,$charset) = $pkg->process_part_body($sub_part,$format,$cidmap,$charset);
+                }
+                if ($sub_part->content_type =~ m!^multipart/(related|alternative|mixed)!) {
+                    my @sub_sub_parts = $sub_part->subparts;
+                    foreach my $sub_sub_part (@sub_sub_parts) {
+                        if ($sub_sub_part->content_type  =~ m!^text/(html|plain)!) {
+                            ($text,$charset) = $pkg->process_part_body($sub_sub_part,$format,$cidmap,$charset);
+                        }
+                    }
+                }
             }
-            elsif (($media_type eq 'text/html')) {
-                # scan html for img tags with a cid: src; swap with
-                # markup for asset
-                $body =~ s/
-                    (
-                        (<[iI][mM][gG]\s+?[^>]*?\b
-                            [sS][rR][cC]=)
-                        (['"]?)
-                        cid:([^>\s'"]+)
-                        (['"]?)
-                    )
-                /$cidmap->{$4} ? $2 . $3 . $cidmap->{$4}{asset}->url . $5 : $1/gsex;
-            }
-
-            $text .= $body;
         }
-        else {
-            if ($part->filename) {
-                my $file = $files[$file_num];
-                $file_num++;
-                # this is a file embedded for reference in the html; don't
-                # output it in the body of the post.
-                next if $file->{content_id};
+    }
+    
+    #do file embeds in separate loop just in case they are not the final parts in the array
+    foreach my $part (@parts) {
+        if ($part->filename) {
+            my $file = $files[$file_num];
+            $file_num++;
+            # this is a file embedded for reference in the html; don't
+            # output it in the body of the post.
+            next if $file->{content_id};
 
-                # Has the plugin has been configured to embed a link to the 
-                # asset in the Entry Body? The Objectasset relationship is
-                # created independent of this.
-                if ($cfg->{embed_attachments}) {
-                    $text .= $pkg->format_embedded_asset($file);
+            # Has the plugin has been configured to embed a link to the 
+            # asset in the Entry Body? The Objectasset relationship is
+            # created independent of this.
+            if ($cfg->{embed_attachments}) {
+                $text .= $pkg->format_embedded_asset($file);
+            }
+        } else {
+            #repeat for attachments lurking inside multipart parts
+            if ($part->content_type =~ m!^multipart/(related|alternative|mixed)!) {
+                my @sub_parts = $part->subparts;
+                foreach my $sub_part (@sub_parts) {
+                    if ($sub_part->filename) {
+                        my $file = $files[$file_num];
+                        $file_num++;
+                        next if $file->{content_id};
+                        if ($cfg->{embed_attachments}) {
+                            $text .= $pkg->format_embedded_asset($file);
+                        }
+                    }
+                    # thrid level
+                    if ($sub_part->content_type =~ m!^multipart/(related|alternative|mixed)!) {
+                        my @sub_sub_parts = $sub_part->subparts;
+                        foreach my $sub_sub_part (@sub_sub_parts) {
+                            if ($sub_sub_part->filename) {
+                                my $file = $files[$file_num];
+                                $file_num++;
+                                next if $file->{content_id};
+                                if ($cfg->{embed_attachments}) {
+                                    $text .= $pkg->format_embedded_asset($file);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    print STDERR '[PostOffice body text] from $text: ' . $text . "\n";
+    print STDERR '[PostOffice body text] from $text: ' . $text . "\n"
+        if $DEBUG;
 
     $msg->{subject} = $parsed->header('Subject');
 
@@ -287,6 +316,82 @@ sub process_message_parts {
 
     return;
 }
+
+sub process_part_attachment {
+    my $pkg = shift;
+    my ($part,$blog) = @_;
+    my ($media_type, $part_charset) =
+      _parse_content_type($part->header('Content-Type'));
+    my $filename =
+      MT::I18N::encode_text($part->filename, $part_charset);
+    my $fmgr = $blog->file_mgr;
+    $filename =
+      _unique_filename($fmgr, $blog->site_path, $filename);
+    require File::Spec;
+    my $filepath =
+      File::Spec->catfile($blog->site_path, $filename);
+    my $bytes = $fmgr->put_data($part->body, $filepath);
+    my $cid = $part->header('Content-Id');
+    if ($cid) {
+        $cid =~ s/^<|>$//g;
+    }
+    my $file = {
+        name       => $filename,
+        path       => $filepath,
+        url        => $blog->site_url . $filename,
+        media_type => $media_type,
+        size       => $bytes,
+        content_id => $cid,
+    };
+   
+    my $asset = $pkg->save_attachment($blog, $file);
+
+    if ($asset) {
+        $file->{asset} = $asset;
+    }
+    return $file;
+}
+
+sub process_part_body {
+    my $pkg = shift;
+    my ($part,$format,$cidmap,$charset) = @_;
+    my ($media_type, $part_charset) =
+      _parse_content_type($part->header('Content-Type'));
+      
+    if (!defined $charset) {
+        $charset = $part_charset;
+    }
+
+    print STDERR '[PostOffice body text] From $part: ' . $part->body . "\n"
+        if $DEBUG;
+    
+    my $body = MT::I18N::encode_text($part->body, $part_charset);
+    
+    print STDERR "[PostOffice body text] Processed through encode_text: $body\n"
+        if $DEBUG;
+
+    if (($media_type eq 'text/plain') && ($format eq 'richtext')) {
+        # we're embedding html, so format must be richtext.
+        $body = html_text_transform($body);
+    }
+    elsif (($media_type eq 'text/html')) {
+        # scan html for img tags with a cid: src; swap with
+        # markup for asset
+        $body =~ s/
+            (
+                (<[iI][mM][gG]\s+?[^>]*?\b
+                    [sS][rR][cC]=)
+                (['"]?)
+                cid:([^>\s'"]+)
+                (['"]?)
+            )
+        /$cidmap->{$4} ? $2 . $3 . $cidmap->{$4}{asset}->url . $5 : $1/gsex;
+    }
+
+    my $text = $body;
+    return ($text,$charset);
+}
+
 
 sub format_embedded_asset {
     my $pkg = shift;
