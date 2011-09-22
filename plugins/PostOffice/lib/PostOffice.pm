@@ -444,113 +444,118 @@ sub process_message {
     require MT::Blog;
     my $blog = MT::Blog->load($blog_id);
 
-    $pkg->process_message_parts($blog, $msg, $cfg, $au);
-
-    print STDERR '[PostOffice body text] final $msg ' . $msg->{text} . "\n";
-
     require MT::Entry;
-    my $entry = MT::Entry->new();
-    $entry->title($msg->{subject});
-    $entry->text($msg->{text});
-    $entry->author_id($au->id);
-    $entry->blog_id($blog_id);
-    $entry->status($cfg->{post_status} || 1);
-    $entry->tags(@{$msg->{tags}}) if $msg->{tags};
-    $entry->convert_breaks($msg->{format});
+    # First check whether this message-id is already in the database
+    unless ( my $entry = MT::Entry->search_by_meta('message_id', $msg->{'message-id'}) ) {
 
-    MT->run_callbacks(
-        'postoffice_pre_save',
-        blog_id     => $blog_id,
-        config      => $cfg,
-        author      => $au,
-        permissions => $perm,
-        message     => $msg,
-        entry       => $entry,
-    );
+        $pkg->process_message_parts($blog, $msg, $cfg, $au);
 
-    print STDERR "[PostOffice] Saving entry [" . $entry->title . "]\n"
-      if $DEBUG;
+        print STDERR '[PostOffice body text] final $msg ' . $msg->{text} . "\n";
 
-    if (! $entry->save) {
-        print STDERR "[PostOffice] Error saving entry [" . $entry->title . "]: "
-            . $entry->errstr . "\n";
-        return 0;
-    }
+        $entry = MT::Entry->new();
+        $entry->title($msg->{subject});
+        $entry->text($msg->{text});
+        $entry->author_id($au->id);
+        $entry->blog_id($blog_id);
+        $entry->status($cfg->{post_status} || 1);
+        $entry->tags(@{$msg->{tags}}) if $msg->{tags};
+        $entry->convert_breaks($msg->{format});
+        $entry->message_id($msg->{'message-id'});
 
-    # create ObjectAsset associations for attachments if they don't already exist
-    if ($msg->{files}) {
-        require MT::ObjectAsset;
-        foreach my $file (@{$msg->{files}}) {
-            next unless $file->{asset};
-            my $asset = $file->{asset};
-            my $obj_asset = MT::ObjectAsset->load({ asset_id => $asset->id,
-                object_ds => 'entry', object_id => $entry->id });
-            unless ($obj_asset) {
-                $obj_asset = new MT::ObjectAsset;
-                $obj_asset->blog_id($blog_id);
-                $obj_asset->asset_id($asset->id);
-                $obj_asset->object_ds('entry');
-                $obj_asset->object_id($entry->id);
-                $obj_asset->save;
-            }
+        MT->run_callbacks(
+            'postoffice_pre_save',
+            blog_id     => $blog_id,
+            config      => $cfg,
+            author      => $au,
+            permissions => $perm,
+            message     => $msg,
+            entry       => $entry,
+        );
+
+        print STDERR "[PostOffice] Saving entry [" . $entry->title . "]\n"
+          if $DEBUG;
+
+        if (! $entry->save) {
+            print STDERR "[PostOffice] Error saving entry [" . $entry->title . "]: "
+                . $entry->errstr . "\n";
+            return 0;
         }
-    }
 
-    my $cat;
-    my $place;
-    if ($msg->{category}) {
-        require MT::Category;
-        # TBD: is $msg->{cateogry} encoded properly here?
-        $cat = MT::Category->load({ label => $msg->{category} });
-        unless ($cat) {
-            if ($perm->can_edit_categories) {
-                $cat = MT::Category->new();
-                $cat->blog_id($blog_id);
-                $cat->label($msg->{category});
-                $cat->parent(0);
-                $cat->save
-                  or die $cat->errstr;
+        # create ObjectAsset associations for attachments if they don't already exist
+        if ($msg->{files}) {
+            require MT::ObjectAsset;
+            foreach my $file (@{$msg->{files}}) {
+                next unless $file->{asset};
+                my $asset = $file->{asset};
+                my $obj_asset = MT::ObjectAsset->load({ asset_id => $asset->id,
+                    object_ds => 'entry', object_id => $entry->id });
+                unless ($obj_asset) {
+                    $obj_asset = new MT::ObjectAsset;
+                    $obj_asset->blog_id($blog_id);
+                    $obj_asset->asset_id($asset->id);
+                    $obj_asset->object_ds('entry');
+                    $obj_asset->object_id($entry->id);
+                    $obj_asset->save;
+                }
             }
         }
 
-        if ($cat) {
-            require MT::Placement;
-            $place = MT::Placement->new;
-            $place->entry_id($entry->id);
-            $place->blog_id($blog_id);
-            $place->category_id($cat->id);
-            $place->is_primary(1);
-            $place->save
-              or die $place->errstr;
+        my $cat;
+        my $place;
+        if ($msg->{category}) {
+            require MT::Category;
+            # TBD: is $msg->{cateogry} encoded properly here?
+            $cat = MT::Category->load({ label => $msg->{category} });
+            unless ($cat) {
+                if ($perm->can_edit_categories) {
+                    $cat = MT::Category->new();
+                    $cat->blog_id($blog_id);
+                    $cat->label($msg->{category});
+                    $cat->parent(0);
+                    $cat->save
+                      or die $cat->errstr;
+                }
+            }
+
+            if ($cat) {
+                require MT::Placement;
+                $place = MT::Placement->new;
+                $place->entry_id($entry->id);
+                $place->blog_id($blog_id);
+                $place->category_id($cat->id);
+                $place->is_primary(1);
+                $place->save
+                  or die $place->errstr;
+            }
         }
+
+        MT->run_callbacks(
+            'postoffice_post_save',
+            blog_id     => $blog_id,
+            config      => $cfg,
+            author      => $au,
+            permissions => $perm,
+            message     => $msg,
+            entry       => $entry,
+            ($cat   ? (category  => $cat)   : ()),
+            ($place ? (placement => $place) : ()),
+        );
+
+        if ($entry->status == 2) {    # publish
+            MT->rebuild_entry(
+                Entry => $entry,
+                BuildDependecies => 1,
+            )
+                or MT->log({
+                    blog_id => $blog_id,
+                    level   => MT::Log::ERROR(),
+                    message => 'Post Office encountered an error while trying to '
+                        . 'publish: ' . MT->errstr,
+                });
+        }
+
+        MT->run_callbacks('api_post_save.entry', MT->instance, $entry, undef);
     }
-
-    MT->run_callbacks(
-        'postoffice_post_save',
-        blog_id     => $blog_id,
-        config      => $cfg,
-        author      => $au,
-        permissions => $perm,
-        message     => $msg,
-        entry       => $entry,
-        ($cat   ? (category  => $cat)   : ()),
-        ($place ? (placement => $place) : ()),
-    );
-
-    if ($entry->status == 2) {    # publish
-        MT->rebuild_entry(
-            Entry => $entry,
-            BuildDependecies => 1,
-        )
-            or MT->log({
-                blog_id => $blog_id,
-                level   => MT::Log::ERROR(),
-                message => 'Post Office encountered an error while trying to '
-                    . 'publish: ' . MT->errstr,
-            });
-    }
-
-    MT->run_callbacks('api_post_save.entry', MT->instance, $entry, undef);
 
     return 1;
 }

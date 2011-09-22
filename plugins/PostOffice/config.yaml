@@ -47,6 +47,10 @@ settings:
     embed_attachments:
         Default: 1
 
+object_types:
+    entry:
+        message_id: string meta indexed
+
 callbacks:
     MT::App::CMS::template_source.edit_entry: $postoffice::PostOffice::CMS::edit_entry_src
 
