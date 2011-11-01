@@ -217,6 +217,14 @@ sub config_template {
 </mtapp:setting>
 
 <mtapp:setting
+    id="alias_to_username"
+    label="<__trans phrase="Email Alias Matches MT Username">"
+    show_hint="1"
+    hint="<__trans phrase="Checking this box will result in Post Office looking for a matching MT user based on the alias portion of the sender email address (the part before the \@ sign). For example, if the email was sent by johnsmith\@domain.com, Post Office would check to see if there is an MT Author with the username johnsmith. If a match is found, the entry will be posted as that MT user (if the user has posting permissions in the blog). If no match is found, Post Office will still try to look for a user with a matching email address.">">
+    <input type="checkbox" name="alias_to_username" <mt:if name="alias_to_username">checked="checked"</mt:if> id="alias_to_username" class="cb" value="1" />
+</mtapp:setting>
+
+<mtapp:setting
     id="default_author"
     label="<__trans phrase="Default Author">"
     show_hint="1"

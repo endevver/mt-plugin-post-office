@@ -40,6 +40,8 @@ settings:
         Default: email@yourdomain.com
     allow_any_email:
         Default: 0
+    alias_to_username:
+        Default: 0
     post_assets:
         Default: 0
     post_status:

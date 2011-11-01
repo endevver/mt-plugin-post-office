@@ -630,6 +630,16 @@ sub process_messages {
             $addresses->{$from} = 1;
         }
         
+        # If alias/user portion of email address matches MT username, post
+        # Entry as that MT user
+        if ($cfg->{alias_to_username}) {
+            print STDERR "[PostOffice] from email alias is " . $addr->user . "\n"
+                if $DEBUG;
+            if ( my $user = MT::Author->load({ name => $addr->user }) ) {
+                $addresses->{$from} = $user;
+            }
+        }
+        
         unless ($addresses->{$from}) {
             print STDERR "[PostOffice] Unknown author address for message "
               . $msg->{'message-id'}
