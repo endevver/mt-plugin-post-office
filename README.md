@@ -19,6 +19,8 @@ want to post to when sending an email.
 
 ### Prerequisites ###
 
+* Movable Type 4.x or 5.x
+
 * Mail::IMAPClient (for IMAP)
 * Mail::POP3Client (for POP) (included with Post Office)
 * Email::Address (included with Post Office)
@@ -174,3 +176,7 @@ GPL 2.0
 ## AUTHOR ##
 
 Copyright 2008-2010, Six Apart Ltd., All rights reserved.
+Additional features and bug fixes contributed by:
+
+* [Dan Wolfgang](http://uinnovations.com), for [Endevver](http://endevver.com)
+* [Mark Carey](http://mt-hacks.com)
