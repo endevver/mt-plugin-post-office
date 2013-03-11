@@ -7,13 +7,8 @@ description: Reads from e-mail and posts to MT.
 version: 1.2.3
 plugin_link: http://plugins.movabletype.org/post-office/
 
-applications:
-    cms:
-        init: >>
-            sub {
-                my $c = MT->component('postoffice');
-                $c->{config_template} = MT->handler_to_coderef('$postoffice::PostOffice::CMS::config_template');
-            }
+config_template:
+    code: $PostOffice::PostOffice::CMS::config_template
 
 settings:
     email_address:

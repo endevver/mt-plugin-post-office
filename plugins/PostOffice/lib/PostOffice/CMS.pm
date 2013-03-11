@@ -45,16 +45,22 @@ EOT
     $$tmpl =~ s!(<div id="quickpost">)!$out$1!;
 }
 
+# Build the plugin Settings.
 sub config_template {
     my ($plugin, $param, $scope) = @_;
-    my @allowed_authors;
     my $config = $plugin->get_config_hash($scope);
+
+    # Generate a list of authors allowed to publish.
+    my @allowed_authors;
     my $default_author = $config->{default_author} || 0;
     my @authors = MT::Author->load( { type => 1 } ); # only authors
     if ($scope =~ m/blog:/) {
         $scope =~ s/blog://;
         foreach my $iter (@authors) {
-            my $perms = MT::Permission->load({ blog_id => $scope, author_id => $iter->id });
+            my $perms = MT::Permission->load({
+                blog_id   => $scope,
+                author_id => $iter->id,
+            });
             if ($perms) {
                 push @allowed_authors, $iter;
             }
@@ -64,6 +70,7 @@ sub config_template {
         @allowed_authors = @authors;
     }
 
+    # Create the Default Author options
     my $author_options = '';
     foreach my $a (@allowed_authors) {
         $author_options .= "<option value=\"" . $a->id . "\"";
@@ -73,6 +80,7 @@ sub config_template {
         $author_options .= ">" . MT::Util::encode_html($a->name) . "</option>\n";
     }
 
+    # Create the Mail Server Type options
     my $transport = lc($config->{email_transport}) || 'pop3';
     my $transports = '';
     my $app = MT->instance;
@@ -106,7 +114,10 @@ sub config_template {
     label="<__trans phrase="Destination Inbox">"
     show_hint="1"
     hint="<__trans phrase="This is the email address authors send posts to when they want Movable Type to post those messages to this blog.">">
-    <input name="email_address" id="email_address" value="<mt:var name="email_address" escape="html">" class="full-width" />
+    <input name="email_address"
+        id="email_address"
+        value="<mt:var name="email_address" escape="html">"
+        class="full text full-width" />
 </mtapp:setting>
 
 <mtapp:setting
@@ -122,7 +133,10 @@ sub config_template {
     label="<__trans phrase="Email Account Host">"
     show_hint="1"
     hint="<__trans phrase="This is the host for the email account which Movable Type uses to post to this blog.">">
-    <input name="email_host" id="email_host" value="<mt:var name="email_host" escape="html">" class="full-width" />
+    <input name="email_host"
+        id="email_host"
+        value="<mt:var name="email_host" escape="html">"
+        class="full text full-width" />
 </mtapp:setting>
 
 <mtapp:setting
@@ -139,7 +153,11 @@ sub config_template {
     show_hint="1"
     shown="$imap_selected"
     hint="<__trans phrase="The IMAP folder to check for new posts.">">
-    <input id="imap_folder" type="text" name="imap_folder" value="<mt:var name="imap_folder" escape="html">" class="full-width" />
+    <input id="imap_folder"
+        type="text"
+        name="imap_folder"
+        value="<mt:var name="imap_folder" escape="html">"
+        class="full text full-width" />
 </mtapp:setting>
 
 <mtapp:setting
@@ -147,7 +165,10 @@ sub config_template {
     label="<__trans phrase="Email Account Username">"
     show_hint="1"
     hint="<__trans phrase="This is the username for the email account which Movable Type uses to post to this blog.">">
-    <input name="email_username" id="email_username" value="<mt:var name="email_username" escape="html">" class="full-width" />
+    <input name="email_username"
+        id="email_username"
+        value="<mt:var name="email_username" escape="html">"
+        class="full text full-width" />
 </mtapp:setting>
 
 <mtapp:setting
@@ -155,7 +176,11 @@ sub config_template {
     label="<__trans phrase="Email Account Password">"
     show_hint="1"
     hint="<__trans phrase="This is the password for the email account which Movable Type uses to post to this blog.">">
-    <input type="password" name="email_password" id="email_password" value="<mt:var name="email_password" escape="html">" class="full-width" />
+    <input type="password"
+        name="email_password"
+        id="email_password"
+        value="<mt:var name="email_password" escape="html">"
+        class="full text full-width" />
 </mtapp:setting>
 
 
@@ -205,7 +230,10 @@ sub config_template {
     label="<__trans phrase="Email Addresses Allowed to Post">"
     show_hint="1"
     hint="<__trans phrase="Movable Type will post messages received from these email addresses. Separate multiple addresses with a comma.">">
-    <textarea name="allowed_emails" id="allowed_emails" cols="" rows="2" class="full-width"><mt:var name="allowed_emails" escape="html"></textarea>
+    <textarea name="allowed_emails"
+        id="allowed_emails"
+        cols="" rows="2"
+        class="full text low full-width"><mt:var name="allowed_emails" escape="html"></textarea>
 </mtapp:setting>
 
 <mtapp:setting
