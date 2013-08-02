@@ -4,7 +4,7 @@ key: postoffice
 author_link: http://www.movabletype.org/
 author_name: Six Apart Ltd.
 description: Reads from e-mail and posts to MT.
-version: 1.2.4
+version: 1.2.5
 plugin_link: http://plugins.movabletype.org/post-office/
 
 config_template:
