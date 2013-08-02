@@ -1,7 +1,7 @@
 ## Post Office, a plugin for Movable Type
 
 * Author: Six Apart
-* Released under GPL2
+* Released under the [MIT License][]
 
 ## OVERVIEW ##
 
@@ -171,12 +171,16 @@ Lastly, send your email!
 
 ## LICENSE ##
 
-GPL 2.0
+[MIT License][]
+
+[MIT License]: http://opensource.org/licenses/MIT
 
 ## AUTHOR ##
 
-Copyright 2008-2010, Six Apart Ltd., All rights reserved.
-Additional features and bug fixes contributed by:
+Copyright 2008-2013, Six Apart Ltd., All rights reserved.
 
-* [Dan Wolfgang](http://uinnovations.com), for [Endevver](http://endevver.com)
+Additional features and bug fixes contributed by and copyright of the
+following and relicensed under the same terms as the software itself:
+
+* [Dan Wolfgang](http://uinnovations.com), [Endevver LLC](http://endevver.com)
 * [Mark Carey](http://mt-hacks.com)
